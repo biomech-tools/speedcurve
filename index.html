@@ -125,10 +125,9 @@ ja:{
   run:function(d,t){return '走行中: '+d.toFixed(0)+'m / '+t+'m'},
   dpts:'取得点数',prog:'進捗',
   startA:'解析開始',stopM:'手動で解析終了',
-  tTime:'理論タイム',tNote:'スピード曲線積分',eTime:'推定タイム',eNote:'反応時間+0.1s補正',
+  eTime:'推定タイム',
   mSpd:'最高速度',aSpd:'平均速度',dist:'種目距離',
   chtTitle:'スピード曲線',axD:'距離 (m)',axS:'速度 (m/s)',
-  tNote2:'推定タイム = 理論タイム + 反応時間(0.1s) − 手動計測誤差(0.3s)',
   svG:'グラフ保存',svD:'データ保存',reMeas:'再計測する',
   noData:'データが不足しています。再試行してください。',
   aErr:'解析エラーが発生しました。再試行してください。',
@@ -156,10 +155,9 @@ en:{
   run:function(d,t){return 'Running: '+d.toFixed(0)+'m / '+t+'m'},
   dpts:'Data Points',prog:'Progress',
   startA:'Start Analysis',stopM:'Stop Manually',
-  tTime:'Theoretical Time',tNote:'Speed curve integration',eTime:'Estimated Time',eNote:'+0.1s reaction time correction',
+  eTime:'Estimated Time',
   mSpd:'Max Speed',aSpd:'Avg Speed',dist:'Distance',
   chtTitle:'Speed Curve',axD:'Distance (m)',axS:'Speed (m/s)',
-  tNote2:'Est. Time = Theoretical Time + Reaction (0.1s) \u2212 Manual Timing Lag (0.3s)',
   svG:'Save Graph',svD:'Save Data',reMeas:'Measure Again',
   noData:'Insufficient data. Please retry.',
   aErr:'Analysis error. Please retry.',
@@ -214,11 +212,20 @@ function iSpeed(pts,d){
   if(d>=pts[pts.length-1].distance) return pts[pts.length-1].speed;
   var i=1; while(i<pts.length&&pts[i].distance<d) i++;
   var p1=pts[i-1],p2=pts[i],t=(d-p1.distance)/(p2.distance-p1.distance);
-  var p0=pts[Math.max(0,i-2)],p3=pts[Math.min(pts.length-1,i+1)];
-  return catmull(p0.speed,p1.speed,p2.speed,p3.speed,t);
+  return p1.speed*(1-t)+p2.speed*t;
 }
 
 // ── Analysis ──────────────────────────────────────────────────────────────
+function smooth(arr,w){
+  // simple moving average over window w
+  var out=[];
+  for(var i=0;i<arr.length;i++){
+    var s=0,c=0;
+    for(var j=Math.max(0,i-w);j<=Math.min(arr.length-1,i+w);j++){s+=arr[j];c++;}
+    out.push(s/c);
+  }
+  return out;
+}
 function analyze(rawPts,evDist){
   var ds=cumDist(rawPts),t0=rawPts[0].timestamp/1000;
   var rs=rawPts.map(function(p,i){
@@ -227,6 +234,21 @@ function analyze(rawPts,evDist){
     else if(i>0){var dt=(p.timestamp-rawPts[i-1].timestamp)/1000;if(dt>0) spd=(ds[i]-ds[i-1])/dt;}
     return {distance:ds[i],speed:spd,time:p.timestamp/1000-t0};
   });
+  // trim leading zero-speed points (standing still before gun)
+  var startIdx=0;
+  for(var i=0;i<rs.length;i++){
+    if(rs[i].speed>0.5){startIdx=i;break;}
+  }
+  rs=rs.slice(startIdx);
+  if(!rs.length) throw new Error('no data');
+  // re-zero distance from actual start
+  var d0=rs[0].distance;
+  rs=rs.map(function(p){return {distance:p.distance-d0,speed:p.speed,time:p.time};});
+
+  // smooth speed values with a 2-point window to reduce GPS noise oscillation
+  var speeds=smooth(rs.map(function(p){return p.speed;}),2);
+  rs=rs.map(function(p,i){return {distance:p.distance,speed:speeds[i],time:p.time};});
+
   var ei=rs.findIndex(function(p){return p.distance>=evDist;});
   if(ei===-1) ei=rs.length-1;
   var et=rs[ei].time;
@@ -237,9 +259,10 @@ function analyze(rawPts,evDist){
   var tr2=rs.filter(function(p){return p.distance<=evDist;});
   if(ei>0&&rs[ei].distance>evDist){
     var A2=rs[ei-1],B2=rs[ei],f2=(evDist-A2.distance)/(B2.distance-A2.distance);
-    var is2=catmull(rs[Math.max(0,ei-2)].speed,A2.speed,B2.speed,rs[Math.min(rs.length-1,ei+1)].speed,f2);
+    var is2=(A2.speed+B2.speed)/2;
     tr2.push({distance:evDist,speed:is2,time:et});
   }
+  // build curve with linear interpolation (avoids Catmull-Rom overshoot)
   var STEPS=200,md=tr2[tr2.length-1]?tr2[tr2.length-1].distance:evDist,curve=[];
   for(var i=0;i<=STEPS;i++){
     var dd=(i/STEPS)*md;
@@ -408,21 +431,19 @@ function rReady(){
 function rResult(){
   if(!result) return '';
   var avg=result.evD/result.th;
-  return '<div class="rgrid">'+
-  '<div class="rcard"><div class="rlbl">'+tr().tTime+'</div>'+
-  '<div class="rtime">'+result.th.toFixed(2)+'<span class="runit">s</span></div>'+
-  '<div class="rnote">'+tr().tNote+'</div></div>'+
-  '<div class="rcard hi"><div class="rlbl" style="color:var(--sky)">'+tr().eTime+'</div>'+
+  return '<div style="display:flex;justify-content:center;margin-bottom:4px">'+
+  '<div class="rcard hi" style="min-width:160px;text-align:center">'+
+  '<div class="rlbl" style="color:var(--sky)">'+tr().eTime+'</div>'+
   '<div class="rtime sky">'+result.est.toFixed(2)+'<span class="runit" style="color:var(--sky)">s</span></div>'+
-  '<div class="rnote">'+tr().eNote+'</div></div></div>'+
+  '</div></div>'+
   '<div class="card"><div class="sgrid">'+
   '<div><div class="slbl">'+tr().mSpd+'</div><div class="sval em">'+result.mx.toFixed(2)+'<span style="font-size:11px;color:var(--t4)"> m/s</span></div>'+
   '<div class="ssub">'+(result.mx*3.6).toFixed(1)+' km/h</div></div>'+
-  '<div><div class="slbl">'+tr().aSpd+'</div><div class="sval">'+avg.toFixed(2)+'<span style="font-size:11px;color:var(--t4)"> m/s</span></div></div>'+
+  '<div><div class="slbl">'+tr().aSpd+'</div><div class="sval">'+avg.toFixed(2)+'<span style="font-size:11px;color:var(--t4)"> m/s</span></div>'+
+  '<div class="ssub">'+(avg*3.6).toFixed(1)+' km/h</div></div>'+
   '<div><div class="slbl">'+tr().dist+'</div><div class="sval">'+result.evD+'<span style="font-size:11px;color:var(--t4)"> m</span></div></div>'+
   '</div></div>'+
   '<div class="card" style="padding:12px"><canvas id="cht" width="320" height="240"></canvas></div>'+
-  '<div class="box-note"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'+tr().tNote2+'</div>'+
   '<div class="bgrid">'+
   '<button class="btn bghost" onclick="saveG()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>'+tr().svG+'</button>'+
   '<button class="btn bghost" onclick="saveD()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>'+tr().svD+'</button>'+
@@ -465,8 +486,8 @@ function drawChart(){
   ctx.fillStyle='#cbd5e1';ctx.font='bold 12px system-ui';ctx.textAlign='center';
   ctx.fillText(tr().axD,PL+pw/2,H-8);
   ctx.save();ctx.translate(14,PT+ph/2);ctx.rotate(-Math.PI/2);ctx.fillText(tr().axS,0,0);ctx.restore();
-  ctx.fillStyle='#e2e8f0';ctx.font='bold 13px system-ui';ctx.textAlign='left';
-  ctx.fillText(tr().chtTitle,PL+4,PT-10);
+  ctx.fillStyle='#e2e8f0';ctx.font='bold 13px system-ui';ctx.textAlign='center';
+  ctx.fillText(tr().chtTitle,PL+pw/2,PT-10);
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────
