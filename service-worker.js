@@ -1,9 +1,9 @@
 const CACHE_NAME = 'speedcurve-v1';
 const ASSETS = [
   '/',
-  '/index.html',
-  '/icon-192.png',
-  '/icon-512.png',
+  'index.html',
+  'icon-192.png',
+  'icon-512.png',
 ];
 
 self.addEventListener('install', (event) => {
