@@ -184,7 +184,7 @@ var EVENTS=[
 ];
 function elabel(ev){return lang==='ja'?ev.ja:ev.en;}
 
-var REACT=0.1, MLAG=0.3, SMULT=1.2, SSEC=4, SRAD=5;
+var REACT=0.1, MLAG=0.3, SMULT=1.2, SSEC=4, SRAD=4;
 
 // ── State ─────────────────────────────────────────────────────────────────
 var phase='gps_init', gStat='idle', acc=null, selEv=null;
@@ -234,16 +234,35 @@ function analyze(rawPts,evDist){
     else if(i>0){var dt=(p.timestamp-rawPts[i-1].timestamp)/1000;if(dt>0) spd=(ds[i]-ds[i-1])/dt;}
     return {distance:ds[i],speed:spd,time:p.timestamp/1000-t0};
   });
-  // trim leading zero-speed points (standing still before gun)
-  var startIdx=0;
-  for(var i=0;i<rs.length;i++){
-    if(rs[i].speed>0.5){startIdx=i;break;}
+
+  // ── Anchor distance-zero to the point that is exactly evDist before the goal ──
+  // Find the first point where cumulative distance ≥ evDist (the finish crossing).
+  // Interpolate the exact finish distance, then shift every point so that
+  // (finish - evDist) becomes d=0.  This makes the start line = 0 regardless of
+  // GPS drift while the runner waits at the line.
+  var goalIdx=-1;
+  for(var i=0;i<rs.length;i++){if(rs[i].distance>=evDist){goalIdx=i;break;}}
+  if(goalIdx===-1) goalIdx=rs.length-1;
+  var goalDist;
+  if(goalIdx>0&&rs[goalIdx].distance>evDist){
+    var gA=rs[goalIdx-1],gB=rs[goalIdx];
+    var gf=(evDist-gA.distance)/(gB.distance-gA.distance);
+    goalDist=gA.distance+gf*(gB.distance-gA.distance); // == evDist
+  } else {
+    goalDist=rs[goalIdx].distance;
   }
+  var originDist=goalDist-evDist; // raw distance that maps to d=0 (start line)
+
+  // Shift all distances so the computed start line = 0; drop points before it
+  rs=rs.map(function(p){return {distance:p.distance-originDist,speed:p.speed,time:p.time};});
+  // Keep only points from the start line onward (distance ≥ 0)
+  var startIdx=0;
+  for(var i=0;i<rs.length;i++){if(rs[i].distance>=0){startIdx=i;break;}}
   rs=rs.slice(startIdx);
   if(!rs.length) throw new Error('no data');
-  // re-zero distance from actual start
-  var d0=rs[0].distance,t0r=rs[0].time;
-  rs=rs.map(function(p){return {distance:p.distance-d0,speed:p.speed,time:p.time-t0r};});
+  // Re-zero time from first kept point
+  var t0r=rs[0].time;
+  rs=rs.map(function(p){return {distance:p.distance,speed:p.speed,time:p.time-t0r};});
   // ── Smooth raw GPS speeds (2-point moving average) before any fitting ─────
   var rawSpeeds=smooth(rs.map(function(p){return p.speed;}),1);
   rs=rs.map(function(p,i){return {distance:p.distance,speed:rawSpeeds[i],time:p.time};});
@@ -314,7 +333,7 @@ function analyze(rawPts,evDist){
   }
   var mxS=0;
   for(var i=0;i<curve.length;i++) if(curve[i].speed>mxS) mxS=curve[i].speed;
-  return {curve:curve,th:th,est:th+REACT-MLAG,mx:mxS};
+  return {curve:curve,th:th,est:th+REACT-MLAG,mx:mxS,dashDist:5};
 }
 
 // ── GPS ───────────────────────────────────────────────────────────────────
@@ -503,25 +522,66 @@ function drawChart(){
   var PL=55,PT=30,PR=20,PB=50;
   var pw=W-PL-PR,ph=H-PT-PB;
   var cv=result.curve,eD=result.evD,mS=result.mx;
+  var dashDist=result.dashDist||5; // 0‒dashDist drawn as dashed estimate
   ctx.clearRect(0,0,W,H);
   var bg=ctx.createLinearGradient(0,0,0,H);
   bg.addColorStop(0,'#0f172a');bg.addColorStop(1,'#1e293b');
   ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
   var toX=function(d){return PL+(d/eD)*pw;};
   var toY=function(s){return PT+ph-(s/(mS*1.15))*ph;};
+
+  // grid
   ctx.strokeStyle='rgba(148,163,184,0.15)';ctx.lineWidth=1;
   for(var i=0;i<=5;i++){var y=toY(i/5*mS*1.15);ctx.beginPath();ctx.moveTo(PL,y);ctx.lineTo(PL+pw,y);ctx.stroke();}
   for(var i=0;i<=10;i++){var x=toX(i/10*eD);ctx.beginPath();ctx.moveTo(x,PT);ctx.lineTo(x,PT+ph);ctx.stroke();}
-  var grd=ctx.createLinearGradient(0,PT,0,PT+ph);
-  grd.addColorStop(0,'rgba(56,189,248,0.35)');grd.addColorStop(1,'rgba(56,189,248,0.02)');
-  ctx.beginPath();ctx.moveTo(toX(cv[0].distance),PT+ph);
-  for(var i=0;i<cv.length;i++) ctx.lineTo(toX(cv[i].distance),toY(cv[i].speed));
-  ctx.lineTo(toX(cv[cv.length-1].distance),PT+ph);ctx.closePath();ctx.fillStyle=grd;ctx.fill();
-  ctx.beginPath();
-  for(var i=0;i<cv.length;i++){var xp=toX(cv[i].distance),yp=toY(cv[i].speed);i===0?ctx.moveTo(xp,yp):ctx.lineTo(xp,yp);}
-  ctx.strokeStyle='#38bdf8';ctx.lineWidth=2.5;ctx.lineJoin='round';ctx.stroke();
+
+  // split curve into dashed segment [0, dashDist] and solid segment [dashDist, eD]
+  var dashCv=[],solidCv=[];
+  for(var i=0;i<cv.length;i++){
+    if(cv[i].distance<=dashDist) dashCv.push(cv[i]);
+    else solidCv.push(cv[i]);
+  }
+  // interpolate the boundary point so both segments share the junction exactly
+  if(dashCv.length>0&&solidCv.length>0){
+    var jPrev=dashCv[dashCv.length-1],jNext=solidCv[0];
+    var jf=(dashDist-jPrev.distance)/(jNext.distance-jPrev.distance);
+    var jSpd=jPrev.speed+jf*(jNext.speed-jPrev.speed);
+    var jPt={distance:dashDist,speed:jSpd};
+    dashCv.push(jPt);
+    solidCv.unshift(jPt);
+  }
+
+  // fill under solid segment only
+  if(solidCv.length>1){
+    var grd=ctx.createLinearGradient(0,PT,0,PT+ph);
+    grd.addColorStop(0,'rgba(56,189,248,0.30)');grd.addColorStop(1,'rgba(56,189,248,0.02)');
+    ctx.beginPath();
+    ctx.moveTo(toX(solidCv[0].distance),PT+ph);
+    for(var i=0;i<solidCv.length;i++) ctx.lineTo(toX(solidCv[i].distance),toY(solidCv[i].speed));
+    ctx.lineTo(toX(solidCv[solidCv.length-1].distance),PT+ph);
+    ctx.closePath();ctx.fillStyle=grd;ctx.fill();
+  }
+
+  // solid line (5m onward)
+  if(solidCv.length>1){
+    ctx.beginPath();
+    for(var i=0;i<solidCv.length;i++){var xp=toX(solidCv[i].distance),yp=toY(solidCv[i].speed);i===0?ctx.moveTo(xp,yp):ctx.lineTo(xp,yp);}
+    ctx.strokeStyle='#38bdf8';ctx.lineWidth=2.5;ctx.lineJoin='round';ctx.setLineDash([]);ctx.stroke();
+  }
+
+  // dashed line (0‒5m estimated launch)
+  if(dashCv.length>1){
+    ctx.beginPath();
+    for(var i=0;i<dashCv.length;i++){var xp=toX(dashCv[i].distance),yp=toY(dashCv[i].speed);i===0?ctx.moveTo(xp,yp):ctx.lineTo(xp,yp);}
+    ctx.strokeStyle='rgba(56,189,248,0.55)';ctx.lineWidth=2;ctx.lineJoin='round';ctx.setLineDash([5,5]);ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // axes
   ctx.strokeStyle='rgba(148,163,184,0.6)';ctx.lineWidth=1.5;
   ctx.beginPath();ctx.moveTo(PL,PT);ctx.lineTo(PL,PT+ph);ctx.lineTo(PL+pw,PT+ph);ctx.stroke();
+
+  // labels
   ctx.fillStyle='#94a3b8';ctx.font='11px system-ui';ctx.textAlign='right';
   for(var i=0;i<=5;i++){var s=i/5*mS*1.15;ctx.fillText(s.toFixed(1),PL-6,toY(s)+4);}
   ctx.textAlign='center';
