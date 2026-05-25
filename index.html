@@ -211,8 +211,10 @@ function iSpeed(pts,d){
   if(d<=pts[0].distance) return pts[0].speed;
   if(d>=pts[pts.length-1].distance) return pts[pts.length-1].speed;
   var i=1; while(i<pts.length&&pts[i].distance<d) i++;
-  var p1=pts[i-1],p2=pts[i],t=(d-p1.distance)/(p2.distance-p1.distance);
-  return p1.speed*(1-t)+p2.speed*t;
+  // Catmull-Rom spline using the surrounding 4 control points
+  var p0=pts[Math.max(0,i-2)],p1=pts[i-1],p2=pts[i],p3=pts[Math.min(pts.length-1,i+1)];
+  var t=(d-p1.distance)/(p2.distance-p1.distance);
+  return Math.max(0,catmull(p0.speed,p1.speed,p2.speed,p3.speed,t));
 }
 
 // ── Analysis ──────────────────────────────────────────────────────────────
@@ -263,7 +265,7 @@ function analyze(rawPts,evDist){
   // Re-zero time from first kept point
   var t0r=rs[0].time;
   rs=rs.map(function(p){return {distance:p.distance,speed:p.speed,time:p.time-t0r};});
-  // ── Smooth raw GPS speeds (2-point moving average) before any fitting ─────
+  // ── Smooth raw GPS speeds (3-point moving average) before fitting ─────────
   var rawSpeeds=smooth(rs.map(function(p){return p.speed;}),1);
   rs=rs.map(function(p,i){return {distance:p.distance,speed:rawSpeeds[i],time:p.time};});
 
@@ -290,20 +292,24 @@ function analyze(rawPts,evDist){
     // fallback: single-term v = a*d
     ca=Sdv/S20;
   }
-  // Build interpolated launch segment from d=0 to the distance of point (fitN-1)
+  // Build interpolated launch segment from d=0 to the distance of point (fitN-1).
+  // Force the last launch point to exactly match the first real GPS point's speed
+  // so there is no discontinuity at the join.
   var dEnd=rs[fitN-1].distance;
-  var FILL=8;
+  var vEnd=rs[fitN-1].speed; // speed of the first real GPS point after the launch region
+  var FILL=16;
   var launchPts=[];
   for(var k=0;k<=FILL;k++){
     var d=dEnd*(k/FILL);
-    var v=ca*d+cb*d*d;
-    if(v<0) v=0;
-    // interpolate time linearly for the fill points
+    var vFit=ca*d+cb*d*d;
+    if(vFit<0) vFit=0;
+    // blend quadratic fit → real GPS speed near the join to avoid kink
+    var blend=k/FILL; // 0 at origin, 1 at join
+    var v=vFit*(1-blend*blend*blend)+vEnd*(blend*blend*blend);
     var tfrac=(dEnd>0)?d/dEnd:0;
-    var t=rs[fitN-1].time*tfrac;
-    launchPts.push({distance:d,speed:v,time:t});
+    launchPts.push({distance:d,speed:v,time:rs[fitN-1].time*tfrac});
   }
-  // Append GPS data from point fitN onward (already smoothed)
+  // Append GPS data from point fitN onward (already smoothed); drop duplicate join point
   rs=launchPts.concat(rs.slice(fitN));
 
   var ei=rs.findIndex(function(p){return p.distance>=evDist;});
@@ -319,12 +325,16 @@ function analyze(rawPts,evDist){
     var is2=(A2.speed+B2.speed)/2;
     tr2.push({distance:evDist,speed:is2,time:et});
   }
-  // build curve with linear interpolation (avoids Catmull-Rom overshoot)
-  var STEPS=200,md=tr2[tr2.length-1]?tr2[tr2.length-1].distance:evDist,curve=[];
+  // Build curve via Catmull-Rom spline on the control points, then apply a
+  // light moving average to remove any remaining GPS noise.
+  var STEPS=300,md=tr2[tr2.length-1]?tr2[tr2.length-1].distance:evDist,curve=[];
   for(var i=0;i<=STEPS;i++){
     var dd=(i/STEPS)*md;
     curve.push({distance:dd,speed:Math.max(0,iSpeed(tr2,dd))});
   }
+  // Post-smooth the curve (window=2 → 5-point average) to remove residual noise
+  var smoothedSpeeds=smooth(curve.map(function(p){return p.speed;}),2);
+  curve=curve.map(function(p,i){return {distance:p.distance,speed:smoothedSpeeds[i]};});
   var th=0;
   for(var i=1;i<curve.length;i++){
     var ddd=curve[i].distance-curve[i-1].distance;
@@ -617,7 +627,7 @@ function reset(){result=null;pts=[];recording=false;pct=0;statusMsg='';phase='re
 function saveG(){
   var c=document.getElementById('cht');if(!c) return;
   var a=document.createElement('a');
-  a.download='speed_curve_'+result.evL+'_'+new Date().toISOString().slice(0,10)+'.png';
+  a.download='speedcurve_'+result.evL+'_'+new Date().toISOString().slice(0,10)+'.png';
   a.href=c.toDataURL('image/png');a.click();
 }
 function saveD(){
@@ -630,7 +640,7 @@ function saveD(){
   var blob=new Blob([[h].concat(rows).join('\n')],{type:'application/vnd.ms-excel;charset=utf-8;'});
   var url=URL.createObjectURL(blob);
   var a=document.createElement('a');a.href=url;
-  a.download='speed_data_'+result.evL+'_'+new Date().toISOString().slice(0,10)+'.xls';
+  a.download='speedcurve_data_'+result.evL+'_'+new Date().toISOString().slice(0,10)+'.xls';
   a.click();URL.revokeObjectURL(url);
 }
 
