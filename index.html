@@ -184,7 +184,7 @@ var EVENTS=[
 ];
 function elabel(ev){return lang==='ja'?ev.ja:ev.en;}
 
-var REACT=0.1, MLAG=0.3, SMULT=1.2, SSEC=4, SRAD=4;
+var REACT=0.1, MLAG=0.3, SMULT=1.2, SSEC=3, SRAD=4;
 
 // ── State ─────────────────────────────────────────────────────────────────
 var phase='gps_init', gStat='idle', acc=null, selEv=null;
@@ -318,8 +318,10 @@ function analyze(rawPts,evDist){
     var tfrac=(dEnd>0)?d/dEnd:0;
     launchPts.push({distance:d,speed:v,time:rs[fitN-1].time*tfrac});
   }
-  // Append GPS data from point fitN onward (already smoothed); drop duplicate join point
-  rs=launchPts.concat(rs.slice(fitN));
+  // Keep real GPS points (with real timestamps) before concat so we can find
+  // the first measurement taken after t=3s for the dashed-line boundary.
+  var realGps=rs.slice(fitN);
+  rs=launchPts.concat(realGps);
 
   var ei=rs.findIndex(function(p){return p.distance>=evDist;});
   if(ei===-1) ei=rs.length-1;
@@ -352,9 +354,9 @@ function analyze(rawPts,evDist){
   }
   var mxS=0;
   for(var i=0;i<curve.length;i++) if(curve[i].speed>mxS) mxS=curve[i].speed;
-  // dashDist: distance of the first GPS point beyond 4 m (= where real GPS data begins)
+  // dashDist: distance of the first real GPS measurement taken after t > 3s
   var dashDist=evDist;
-  for(var i=0;i<tr2.length;i++){if(tr2[i].distance>4){dashDist=tr2[i].distance;break;}}
+  for(var i=0;i<realGps.length;i++){if(realGps[i].time>3){dashDist=realGps[i].distance;break;}}
   return {curve:curve,th:th,est:th+REACT-MLAG,mx:mxS,dashDist:dashDist};
 }
 
@@ -647,24 +649,39 @@ function stopManual(){
   render();
 }
 function reset(){result=null;pts=[];recording=false;pct=0;statusMsg='';phase='ready';render();}
-function saveG(){
-  var c=document.getElementById('cht');if(!c) return;
-  var a=document.createElement('a');
-  a.download='speedcurve_'+result.evL+'_'+new Date().toISOString().slice(0,10)+'.png';
-  a.href=c.toDataURL('image/png');a.click();
+function fmtDT(d){
+  var pad=function(n){return String(n).padStart(2,'0');};
+  return String(d.getFullYear())+pad(d.getMonth()+1)+pad(d.getDate())+'-'+pad(d.getHours())+pad(d.getMinutes());
 }
-function saveD(){
+async function saveG(){
+  var c=document.getElementById('cht');if(!c) return;
+  var fname='speedcurve_'+result.evL+'_'+fmtDT(new Date())+'.png';
+  if(window.showSaveFilePicker){
+    try{
+      var fh=await window.showSaveFilePicker({suggestedName:fname,types:[{description:'PNG Image',accept:{'image/png':['.png']}}]});
+      var blob=await(await fetch(c.toDataURL('image/png'))).blob();
+      var w=await fh.createWritable();await w.write(blob);await w.close();return;
+    }catch(e){if(e.name==='AbortError') return;}
+  }
+  var a=document.createElement('a');a.download=fname;a.href=c.toDataURL('image/png');a.click();
+}
+async function saveD(){
   if(!result) return;
-  var h=tr().xlsH.join('\t');
+  var fname='speedcurve_data_'+result.evL+'_'+fmtDT(new Date())+'.csv';
+  var h=tr().xlsH.join(',');
   var rows=result.curve.map(function(p){
     var pace=p.speed>0?(100/p.speed).toFixed(2):'-';
-    return [p.distance.toFixed(1),p.speed.toFixed(3),pace].join('\t');
+    return [p.distance.toFixed(1),p.speed.toFixed(3),pace].join(',');
   });
-  var blob=new Blob([[h].concat(rows).join('\n')],{type:'application/vnd.ms-excel;charset=utf-8;'});
+  var blob=new Blob([[h].concat(rows).join('\n')],{type:'text/csv;charset=utf-8;'});
+  if(window.showSaveFilePicker){
+    try{
+      var fh=await window.showSaveFilePicker({suggestedName:fname,types:[{description:'CSV',accept:{'text/csv':['.csv']}}]});
+      var w=await fh.createWritable();await w.write(blob);await w.close();return;
+    }catch(e){if(e.name==='AbortError') return;}
+  }
   var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');a.href=url;
-  a.download='speedcurve_data_'+result.evL+'_'+new Date().toISOString().slice(0,10)+'.xls';
-  a.click();URL.revokeObjectURL(url);
+  var a=document.createElement('a');a.href=url;a.download=fname;a.click();URL.revokeObjectURL(url);
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────
