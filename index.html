@@ -6,7 +6,7 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<title>GPS SpeedCurve V1.0 Beta</title>
+<title>GPS SpeedCurve</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -194,7 +194,7 @@ var EVENTS=[
 ];
 function elabel(ev){return lang==='ja'?ev.ja:ev.en;}
 
-var REACT=0.1, MLAG=0.3, SMULT=1.2, SSEC=3, SRAD=4;
+var REACT=0.1, MLAG=0.3, SOVER=8, SSEC=3, SRAD=4;
 
 // ── State ─────────────────────────────────────────────────────────────────
 var phase='gps_init', gStat='idle', acc=null, selEv=null;
@@ -392,7 +392,7 @@ function checkRec(){
   var evObj=null;
   for(var i=0;i<EVENTS.length;i++) if(EVENTS[i].v===selEv){evObj=EVENTS[i];break;}
   if(!evObj||pts.length<2) return;
-  var stopD=evObj.d*SMULT;
+  var stopD=evObj.d+SOVER;
 
   // ── Start detection: 3 consecutive steps ≥1 m in the same direction ────────
   // For each index i (t1), check steps t1→t2 and t2→t3.
@@ -503,7 +503,7 @@ function rEvents(){
   return EVENTS.map(function(ev){
     return '<button class="evbtn" onclick="selEvent(\''+ev.v+'\')">'+
     '<div><div class="evname">'+elabel(ev)+'</div>'+
-    '<div class="evsub">'+tr().colNote(ev.d*SMULT)+'</div></div>'+
+    '<div class="evsub">'+tr().colNote(ev.d+SOVER)+'</div></div>'+
     '<span style="font-size:20px;color:var(--t4)">\u203a</span></button>';
   }).join('');
 }
@@ -515,7 +515,7 @@ function rReady(){
 
   var inst='';
   if(!recording){
-    var stps=tr().steps(evObj.d,evObj.d*SMULT);
+    var stps=tr().steps(evObj.d,evObj.d+SOVER);
     inst='<div class="card"><div class="ctitle" style="margin-bottom:12px">'+tr().instr+'</div>'+
     '<ul class="steps">'+stps.map(function(s,i){return '<li><span class="snum">'+(i+1)+'</span>'+s+'</li>';}).join('')+'</ul>'+
     '<div class="box-amb" style="margin-top:14px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'+
