@@ -333,7 +333,10 @@ function analyze(rawPts,evDist){
   }
   var mxS=0;
   for(var i=0;i<curve.length;i++) if(curve[i].speed>mxS) mxS=curve[i].speed;
-  return {curve:curve,th:th,est:th+REACT-MLAG,mx:mxS,dashDist:5};
+  // dashDist: distance of the first GPS point beyond 4 m (= where real GPS data begins)
+  var dashDist=evDist;
+  for(var i=0;i<tr2.length;i++){if(tr2[i].distance>4){dashDist=tr2[i].distance;break;}}
+  return {curve:curve,th:th,est:th+REACT-MLAG,mx:mxS,dashDist:dashDist};
 }
 
 // ── GPS ───────────────────────────────────────────────────────────────────
@@ -573,7 +576,7 @@ function drawChart(){
   if(dashCv.length>1){
     ctx.beginPath();
     for(var i=0;i<dashCv.length;i++){var xp=toX(dashCv[i].distance),yp=toY(dashCv[i].speed);i===0?ctx.moveTo(xp,yp):ctx.lineTo(xp,yp);}
-    ctx.strokeStyle='rgba(56,189,248,0.55)';ctx.lineWidth=2;ctx.lineJoin='round';ctx.setLineDash([5,5]);ctx.stroke();
+    ctx.strokeStyle='rgba(56,189,248,0.55)';ctx.lineWidth=2;ctx.lineJoin='round';ctx.setLineDash([3,3]);ctx.stroke();
     ctx.setLineDash([]);
   }
 
