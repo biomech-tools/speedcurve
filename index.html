@@ -6,7 +6,7 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<title>GPS SpeedCurve</title>
+<title>GPS SpeedCurve V1.0 Beta</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -86,13 +86,13 @@ canvas{width:100%;border-radius:12px;display:block}
 .hclose:hover{color:var(--t2)}
 .safe{height:24px}
 </style>
-<link rel="manifest" href="/manifest.json" />
-<link rel="apple-touch-icon" href="/icon-192.png" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-192.png" />
 <meta name="theme-color" content="#0f172a" />
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/service-worker.js');
+      navigator.serviceWorker.register('./service-worker.js');
     });
   }
 </script>
