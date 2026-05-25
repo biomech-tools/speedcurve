@@ -244,12 +244,48 @@ function analyze(rawPts,evDist){
   // re-zero distance from actual start
   var d0=rs[0].distance,t0r=rs[0].time;
   rs=rs.map(function(p){return {distance:p.distance-d0,speed:p.speed,time:p.time-t0r};});
-  // force origin (0,0) so the curve always starts at zero speed
-  rs.unshift({distance:0,speed:0,time:0});
+  // ── Smooth raw GPS speeds (2-point moving average) before any fitting ─────
+  var rawSpeeds=smooth(rs.map(function(p){return p.speed;}),1);
+  rs=rs.map(function(p,i){return {distance:p.distance,speed:rawSpeeds[i],time:p.time};});
 
-  // smooth speed values with a 2-point window to reduce GPS noise oscillation
-  var speeds=smooth(rs.map(function(p){return p.speed;}),2);
-  rs=rs.map(function(p,i){return {distance:p.distance,speed:speeds[i],time:p.time};});
+  // ── Origin-constrained quadratic fit for the launch phase ─────────────────
+  // Use the first 3 real GPS points (indices 0,1,2) to fit v = a*d + b*d²
+  // which is forced through (0,0). Then replace those points with a smooth
+  // interpolated curve, and concatenate the rest of the GPS data from point 3.
+  var fitN=Math.min(3,rs.length);
+  // Least-squares: minimise Σ(a*di + b*di² - vi)² → normal equations
+  // [Σdi²  Σdi³] [a]   [Σdi*vi]
+  // [Σdi³  Σdi⁴] [b] = [Σdi²*vi]
+  var S20=0,S30=0,S40=0,Sdv=0,Sd2v=0;
+  for(var k=0;k<fitN;k++){
+    var dk=rs[k].distance,vk=rs[k].speed;
+    S20+=dk*dk; S30+=dk*dk*dk; S40+=dk*dk*dk*dk;
+    Sdv+=dk*vk; Sd2v+=dk*dk*vk;
+  }
+  var det=S20*S40-S30*S30;
+  var ca=0,cb=0;
+  if(Math.abs(det)>1e-12){
+    ca=(S40*Sdv-S30*Sd2v)/det;
+    cb=(S20*Sd2v-S30*Sdv)/det;
+  } else if(S20>1e-12){
+    // fallback: single-term v = a*d
+    ca=Sdv/S20;
+  }
+  // Build interpolated launch segment from d=0 to the distance of point (fitN-1)
+  var dEnd=rs[fitN-1].distance;
+  var FILL=8;
+  var launchPts=[];
+  for(var k=0;k<=FILL;k++){
+    var d=dEnd*(k/FILL);
+    var v=ca*d+cb*d*d;
+    if(v<0) v=0;
+    // interpolate time linearly for the fill points
+    var tfrac=(dEnd>0)?d/dEnd:0;
+    var t=rs[fitN-1].time*tfrac;
+    launchPts.push({distance:d,speed:v,time:t});
+  }
+  // Append GPS data from point fitN onward (already smoothed)
+  rs=launchPts.concat(rs.slice(fitN));
 
   var ei=rs.findIndex(function(p){return p.distance>=evDist;});
   if(ei===-1) ei=rs.length-1;
