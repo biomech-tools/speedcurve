@@ -203,6 +203,15 @@ function cumDist(ps){
   for(var i=1;i<ps.length;i++) d.push(d[i-1]+hav(ps[i-1].lat,ps[i-1].lon,ps[i].lat,ps[i].lon));
   return d;
 }
+// bearing in degrees [0,360) from point a to point b
+function bearing(a,b){
+  var r=Math.PI/180;
+  var dLo=(b.lon-a.lon)*r;
+  var y=Math.sin(dLo)*Math.cos(b.lat*r);
+  var x=Math.cos(a.lat*r)*Math.sin(b.lat*r)-Math.sin(a.lat*r)*Math.cos(b.lat*r)*Math.cos(dLo);
+  return (Math.atan2(y,x)/r+360)%360;
+}
+function angleDiff(a,b){var d=Math.abs(a-b)%360;return d>180?360-d:d;}
 function catmull(p0,p1,p2,p3,t){
   return 0.5*(2*p1+(-p0+p2)*t+(2*p0-5*p1+4*p2-p3)*t*t+(-p0+3*p1-3*p2+p3)*t*t*t);
 }
@@ -372,13 +381,27 @@ function checkRec(){
   for(var i=0;i<EVENTS.length;i++) if(EVENTS[i].v===selEv){evObj=EVENTS[i];break;}
   if(!evObj||pts.length<2) return;
   var stopD=evObj.d*SMULT;
+
+  // ── Start detection: 3 consecutive steps ≥1 m in the same direction ────────
+  // For each index i (t1), check steps t1→t2 and t2→t3.
+  // All three steps must be ≥1 m and the bearing of each step must be within
+  // DIR_TOL degrees of the first step's bearing.  If t2 or t3 fails, reset.
+  var DIR_TOL=60, MOVE_MIN=1.0;
   var si=-1;
-  for(var i=0;i<pts.length;i++){
-    var win=pts.filter(function(p){return p.timestamp>=pts[i].timestamp-SSEC*1000&&p.timestamp<=pts[i].timestamp;});
-    if(win.length<2) continue;
-    var mx=0;
-    for(var j=0;j<win.length;j++){var dd=hav(win[j].lat,win[j].lon,pts[i].lat,pts[i].lon);if(dd>mx) mx=dd;}
-    if(mx<=SRAD){si=i;break;}
+  for(var i=0;i+2<pts.length;i++){
+    var d1=hav(pts[i].lat,pts[i].lon,pts[i+1].lat,pts[i+1].lon);
+    if(d1<MOVE_MIN) continue; // t1 step too small – skip
+    var b1=bearing(pts[i],pts[i+1]);
+    var d2=hav(pts[i+1].lat,pts[i+1].lon,pts[i+2].lat,pts[i+2].lon);
+    if(d2<MOVE_MIN) continue; // t2 step too small – not a real move
+    if(angleDiff(bearing(pts[i+1],pts[i+2]),b1)>DIR_TOL) continue; // t2 wrong direction
+    // Need t3 as well
+    if(i+3>=pts.length) break; // not enough data yet
+    var d3=hav(pts[i+2].lat,pts[i+2].lon,pts[i+3].lat,pts[i+3].lon);
+    if(d3<MOVE_MIN) continue; // t3 step too small – not a real move
+    if(angleDiff(bearing(pts[i+2],pts[i+3]),b1)>DIR_TOL) continue; // t3 wrong direction
+    si=i; // t1 is the start
+    break;
   }
   if(si===-1){statusMsg=tr().detSt;render();return;}
   var rp=pts.slice(si),rd=cumDist(rp),rt=rd[rd.length-1];
