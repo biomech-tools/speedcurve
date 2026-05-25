@@ -53,7 +53,7 @@ h1{font-size:24px;font-weight:800;color:var(--t1);line-height:1.2;margin-top:8px
 .row label{font-size:13px;color:var(--t3)}
 .row .val{font-family:monospace;font-size:15px;font-weight:700;color:var(--em)}
 .evbtn{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--br);border-radius:20px;padding:16px 20px;width:100%;text-align:left;cursor:pointer;transition:all .15s;-webkit-tap-highlight-color:transparent}
-.evbtn:hover,.evbtn:active{background:var(--card2);border-color:rgba(56,189,248,.4)}
+.evbtn:hover{background:var(--card2);border-color:rgba(56,189,248,.4)}
 .evname{font-size:17px;font-weight:700;color:var(--t1)}
 .evbtn:hover .evname{color:var(--sky)}
 .evsub{font-size:12px;color:var(--t4);margin-top:2px}
@@ -242,8 +242,10 @@ function analyze(rawPts,evDist){
   rs=rs.slice(startIdx);
   if(!rs.length) throw new Error('no data');
   // re-zero distance from actual start
-  var d0=rs[0].distance;
-  rs=rs.map(function(p){return {distance:p.distance-d0,speed:p.speed,time:p.time};});
+  var d0=rs[0].distance,t0r=rs[0].time;
+  rs=rs.map(function(p){return {distance:p.distance-d0,speed:p.speed,time:p.time-t0r};});
+  // force origin (0,0) so the curve always starts at zero speed
+  rs.unshift({distance:0,speed:0,time:0});
 
   // smooth speed values with a 2-point window to reduce GPS noise oscillation
   var speeds=smooth(rs.map(function(p){return p.speed;}),2);
@@ -343,7 +345,12 @@ function render(){
   if(phase==='gps_init'){
     document.getElementById('htitle').innerHTML='<h1 style="font-size:24px;font-weight:500;color:var(--t1);line-height:1.2;display:flex;align-items:baseline;gap:8px">GPS SpeedCurve<span style="font-size:13px;font-weight:500;color:var(--t4)">V1.0 Beta</span></h1>';
   } else {
-    document.getElementById('htitle').innerHTML='<h1 style="font-size:24px;font-weight:800;color:var(--t1);line-height:1.2">'+(hmap[phase]||'')+'</h1>';
+    var pageTitle=hmap[phase]||'';
+    document.getElementById('htitle').innerHTML=
+      '<div style="display:flex;flex-direction:column;gap:1px">'+
+      '<span style="font-size:11px;font-weight:600;color:var(--t4);letter-spacing:.04em">SpeedCurve</span>'+
+      '<h1 style="font-size:20px;font-weight:800;color:var(--t1);line-height:1.2">'+pageTitle+'</h1>'+
+      '</div>';
   }
   document.getElementById('hsub').textContent=phase==='gps_init'?tr().tagline:'';
   var m=document.getElementById('main');
