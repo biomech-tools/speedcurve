@@ -293,7 +293,9 @@ function analyze(rawPts,evDist){
   // Use the first 3 real GPS points (indices 0,1,2) to fit v = a*d + b*d²
   // which is forced through (0,0). Then replace those points with a smooth
   // interpolated curve, and concatenate the rest of the GPS data from point 3.
-  var fitN=Math.min(2,rs.length);
+  // Use fewer points at low speed (launch phase) for responsiveness; more at speed for noise reduction.
+  // Threshold: 3 m/s (~11 km/h). rs[0].speed is the smoothed first GPS point.
+  var fitN=(rs.length>=3&&rs[0].speed>=3)?3:Math.min(2,rs.length);
   // Least-squares: minimise Σ(a*di + b*di² - vi)² → normal equations
   // [Σdi²  Σdi³] [a]   [Σdi*vi]
   // [Σdi³  Σdi⁴] [b] = [Σdi²*vi]
