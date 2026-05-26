@@ -684,6 +684,28 @@ async function saveD(){
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 render();
+
+window.addEventListener("load", () => {
+  const lastShown = localStorage.getItem("warningLastShown");
+  const now = Date.now();
+  const SIXTY_DAYS = 60 * 24 * 60 * 60 * 1000;
+  if (!lastShown || now - lastShown > SIXTY_DAYS) {
+    alert("CAUTION: This tool is protected by copyright (\u00a92026 A. Azuma. All Rights Reserved). Unauthorized downloading, copying, or redistribution is prohibited.\n\u6ce8\u610f\uff1a\u672c\u30c4\u30fc\u30eb\u306f\u8457\u4f5c\u6a29\u306b\u3088\u308a\u4fdd\u8b77\u3055\u308c\u3066\u3044\u307e\u3059 (\u00a92026 A. Azuma. All Rights Reserved)\uff0e\u7121\u65ad\u3067\u306e\u30c0\u30a6\u30f3\u30ed\u30fc\u30c9\uff0c\u8907\u88fd\uff0c\u518d\u914d\u5e03\u3092\u7981\u3058\u307e\u3059\uff0e");
+    localStorage.setItem("warningLastShown", now);
+  }
+});
+</script>
+
+<script>
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey && e.key.toLowerCase() === 's') { e.preventDefault(); }
+  if (e.ctrlKey && e.key.toLowerCase() === 'p') { e.preventDefault(); }
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'i') { e.preventDefault(); }
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'c') { e.preventDefault(); }
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'j') { e.preventDefault(); }
+  if (e.key === 'F12') { e.preventDefault(); }
+});
 </script>
 </body>
 </html>
