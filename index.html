@@ -175,10 +175,11 @@ en:{
   langNext:'JA'
 }};
 
-var lang='ja';
+var lang=localStorage.getItem('sc_lang')||'ja';
 function tr(){return T[lang];}
 function toggleLang(){
   lang=lang==='ja'?'en':'ja';
+  localStorage.setItem('sc_lang',lang);
   document.getElementById('langLbl').textContent=tr().langNext;
   render();
 }
@@ -553,7 +554,7 @@ function rResult(){
   '<div class="ssub">'+(avg*3.6).toFixed(1)+' km/h</div></div>'+
   '<div><div class="slbl">'+tr().dist+'</div><div class="sval">'+result.evD+'<span style="font-size:11px;color:var(--t4)"> m</span></div></div>'+
   '</div></div>'+
-  '<div class="card" style="padding:12px"><canvas id="cht" width="320" height="240"></canvas></div>'+
+  '<div class="card" style="padding:12px;background:#fff"><canvas id="cht" width="320" height="240"></canvas></div>'+
   '<div class="bgrid">'+
   '<button class="btn bghost" onclick="saveG()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>'+tr().svG+'</button>'+
   '<button class="btn bghost" onclick="saveD()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>'+tr().svD+'</button>'+
@@ -572,14 +573,12 @@ function drawChart(){
   var cv=result.curve,eD=result.evD,mS=result.mx;
   var dashDist=result.dashDist||5; // 0‒dashDist drawn as dashed estimate
   ctx.clearRect(0,0,W,H);
-  var bg=ctx.createLinearGradient(0,0,0,H);
-  bg.addColorStop(0,'#0f172a');bg.addColorStop(1,'#1e293b');
-  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#ffffff';ctx.fillRect(0,0,W,H);
   var toX=function(d){return PL+(d/eD)*pw;};
   var toY=function(s){return PT+ph-(s/(mS*1.15))*ph;};
 
-  // grid
-  ctx.strokeStyle='rgba(148,163,184,0.15)';ctx.lineWidth=1;
+  // grid (light grey)
+  ctx.strokeStyle='#cccccc';ctx.lineWidth=0.8;
   for(var i=0;i<=5;i++){var y=toY(i/5*mS*1.15);ctx.beginPath();ctx.moveTo(PL,y);ctx.lineTo(PL+pw,y);ctx.stroke();}
   for(var i=0;i<=10;i++){var x=toX(i/10*eD);ctx.beginPath();ctx.moveTo(x,PT);ctx.lineTo(x,PT+ph);ctx.stroke();}
 
@@ -599,45 +598,34 @@ function drawChart(){
     solidCv.unshift(jPt);
   }
 
-  // fill under solid segment only
-  if(solidCv.length>1){
-    var grd=ctx.createLinearGradient(0,PT,0,PT+ph);
-    grd.addColorStop(0,'rgba(56,189,248,0.30)');grd.addColorStop(1,'rgba(56,189,248,0.02)');
-    ctx.beginPath();
-    ctx.moveTo(toX(solidCv[0].distance),PT+ph);
-    for(var i=0;i<solidCv.length;i++) ctx.lineTo(toX(solidCv[i].distance),toY(solidCv[i].speed));
-    ctx.lineTo(toX(solidCv[solidCv.length-1].distance),PT+ph);
-    ctx.closePath();ctx.fillStyle=grd;ctx.fill();
-  }
-
-  // solid line (5m onward)
+  // solid line (dark blue, no fill)
   if(solidCv.length>1){
     ctx.beginPath();
     for(var i=0;i<solidCv.length;i++){var xp=toX(solidCv[i].distance),yp=toY(solidCv[i].speed);i===0?ctx.moveTo(xp,yp):ctx.lineTo(xp,yp);}
-    ctx.strokeStyle='#38bdf8';ctx.lineWidth=2.5;ctx.lineJoin='round';ctx.setLineDash([]);ctx.stroke();
+    ctx.strokeStyle='#1a4fa0';ctx.lineWidth=2.5;ctx.lineJoin='round';ctx.setLineDash([]);ctx.stroke();
   }
 
-  // dashed line (0‒5m estimated launch)
+  // dashed line (0‒dashDist estimated launch, same dark blue, lighter)
   if(dashCv.length>1){
     ctx.beginPath();
     for(var i=0;i<dashCv.length;i++){var xp=toX(dashCv[i].distance),yp=toY(dashCv[i].speed);i===0?ctx.moveTo(xp,yp):ctx.lineTo(xp,yp);}
-    ctx.strokeStyle='rgba(56,189,248,0.55)';ctx.lineWidth=2;ctx.lineJoin='round';ctx.setLineDash([3,3]);ctx.stroke();
+    ctx.strokeStyle='rgba(26,79,160,0.45)';ctx.lineWidth=2;ctx.lineJoin='round';ctx.setLineDash([4,4]);ctx.stroke();
     ctx.setLineDash([]);
   }
 
-  // axes
-  ctx.strokeStyle='rgba(148,163,184,0.6)';ctx.lineWidth=1.5;
+  // axes (black)
+  ctx.strokeStyle='#000000';ctx.lineWidth=1.5;
   ctx.beginPath();ctx.moveTo(PL,PT);ctx.lineTo(PL,PT+ph);ctx.lineTo(PL+pw,PT+ph);ctx.stroke();
 
-  // labels
-  ctx.fillStyle='#94a3b8';ctx.font='11px system-ui';ctx.textAlign='right';
+  // labels (black)
+  ctx.fillStyle='#000000';ctx.font='11px system-ui';ctx.textAlign='right';
   for(var i=0;i<=5;i++){var s=i/5*mS*1.15;ctx.fillText(s.toFixed(1),PL-6,toY(s)+4);}
   ctx.textAlign='center';
   for(var i=0;i<=10;i++){var d=i/10*eD;ctx.fillText(''+Math.round(d),toX(d),PT+ph+18);}
-  ctx.fillStyle='#cbd5e1';ctx.font='bold 12px system-ui';ctx.textAlign='center';
+  ctx.fillStyle='#000000';ctx.font='bold 12px system-ui';ctx.textAlign='center';
   ctx.fillText(tr().axD,PL+pw/2,H-8);
   ctx.save();ctx.translate(14,PT+ph/2);ctx.rotate(-Math.PI/2);ctx.fillText(tr().axS,0,0);ctx.restore();
-  ctx.fillStyle='#e2e8f0';ctx.font='bold 13px system-ui';ctx.textAlign='center';
+  ctx.fillStyle='#000000';ctx.font='bold 13px system-ui';ctx.textAlign='center';
   ctx.fillText(tr().chtTitle,PL+pw/2,PT-10);
 }
 
